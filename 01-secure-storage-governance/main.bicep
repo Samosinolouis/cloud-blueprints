@@ -1,30 +1,59 @@
-@description('Primary deployment region')
 param location string = resourceGroup().location
+var storageName = toLower('bpstore${uniqueString(resourceGroup().id)}')
 
-@description('Unique short prefix for the storage account')
-@minLength(3)
-@maxLength(8)
-param prefix string = 'bpstore'
-
-// Generate a deterministic 24-character globally unique name
-var storageAccountName = toLower('${prefix}${uniqueString(resourceGroup().id)}')
-
-resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
-  name: storageAccountName
+resource storageaccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
+  name: storageName
   location: location
   sku: {
     name: 'Standard_LRS'
   }
   kind: 'StorageV2'
   properties: {
-    minimumTlsVersion: 'TLS1_2'
+    accessTier: 'Hot'
     allowBlobPublicAccess: false
+    minimumTlsVersion: 'TLS1_2'
     supportsHttpsTrafficOnly: true
   }
 }
 
+resource lifecyclePolicy 'Microsoft.Storage/storageAccounts/managementPolicies@2023-01-01' = {
+  parent: storageaccount
+  name: 'default'
+  properties: {
+    policy: {
+      rules: [
+        {
+          name: 'cost-optimization-rule'
+          enabled: true
+          type: 'Lifecycle'
+          definition: {
+            filters: {
+              blobTypes: [
+                'blockBlob'
+              ]
+            }
+            actions: {
+              baseBlob: {
+                tierToCool: {
+                  daysAfterModificationGreaterThan: 30
+                }
+                tierToArchive: {
+                  daysAfterModificationGreaterThan: 90
+                }
+                delete: {
+                  daysAfterModificationGreaterThan: 365
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+
 resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-01-01' = {
-  parent: storageAccount
+  parent: storageaccount
   name: 'default'
 }
 
@@ -36,4 +65,4 @@ resource container 'Microsoft.Storage/storageAccounts/blobServices/containers@20
   }
 }
 
-output deployedStorageAccountName string = storageAccount.name
+output deployedStorageAccountName string = storageaccount.name
