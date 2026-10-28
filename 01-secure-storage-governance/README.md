@@ -25,6 +25,7 @@ flowchart TD
     Container --- Blob
     SA --- Policy
 
-    Client -- "1. Public Access (No SAS)" -->|HTTP 409 Blocked| Container
-    Client -- "2. Read SAS Token" -->|HTTP 200 OK| Blob
-    Client -- "3. Unauthorized Write" -->|HTTP 403 Forbidden| Blob
+    Client -->|1. Public Access Blocked: HTTP 409| Container
+    Client -->|2. Read SAS Token: HTTP 200 OK| Blob
+    Client -->|3. Unauthorized Write: HTTP 403 Forbidden| Blob
+```
