@@ -1,5 +1,47 @@
 param location string = resourceGroup().location
+param virtualNetworkAddressPrefix string = '10.0.0.0/16'
+param privateEndpointSubnetAddressPrefix string = '10.0.1.0/24'
+
 var storageName = toLower('bpstore${uniqueString(resourceGroup().id)}')
+var privateDnsZoneName = 'privatelink.blob.${environment().suffixes.storage}'
+
+resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-05-01' = {
+  name: '${storageName}-vnet'
+  location: location
+  properties: {
+    addressSpace: {
+      addressPrefixes: [
+        virtualNetworkAddressPrefix
+      ]
+    }
+  }
+}
+
+resource privateEndpointSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' = {
+  parent: virtualNetwork
+  name: 'private-endpoints'
+  properties: {
+    addressPrefix: privateEndpointSubnetAddressPrefix
+    privateEndpointNetworkPolicies: 'Disabled'
+  }
+}
+
+resource privateDnsZone 'Microsoft.Network/privateDnsZones@2024-06-01' = {
+  name: privateDnsZoneName
+  location: 'global'
+}
+
+resource privateDnsZoneVnetLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2024-06-01' = {
+  parent: privateDnsZone
+  name: '${storageName}-vnet-link'
+  location: 'global'
+  properties: {
+    registrationEnabled: false
+    virtualNetwork: {
+      id: virtualNetwork.id
+    }
+  }
+}
 
 // Primary Storage Account
 resource storageaccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
@@ -14,6 +56,47 @@ resource storageaccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
     allowBlobPublicAccess: false
     minimumTlsVersion: 'TLS1_2'
     supportsHttpsTrafficOnly: true
+    publicNetworkAccess: 'disabled'
+    networkAcls: {
+      bypass: 'AzureServices'
+      defaultAction: 'Deny'
+    }
+  }
+}
+
+resource privateEndpoint 'Microsoft.Network/privateEndpoints@2024-10-01' = {
+  name: '${storageaccount.name}-pe'
+  location: location
+  properties: {
+    subnet: {
+      id: privateEndpointSubnet.id
+    }
+    privateLinkServiceConnections: [
+      {
+        name: '${storageaccount.name}-plsc'
+        properties: {
+          privateLinkServiceId: storageaccount.id
+          groupIds: [
+            'blob'
+          ]
+        }
+      }
+    ]
+  }
+}
+
+resource privateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-10-01' = {
+  name: 'default'
+  parent: privateEndpoint
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'blob'
+        properties: {
+          privateDnsZoneId: privateDnsZone.id
+        }
+      }
+    ]
   }
 }
 
